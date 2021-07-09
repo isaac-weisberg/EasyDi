@@ -287,7 +287,62 @@ open class Assembly: AssemblyInternal {
         }
     }
     
-    /// This method defines object, which will be initialized and injected by assembly.
+    /// This method defines a way to construct an object via closure, which will be initialized and injected by assembly.
+    ///
+    /// Syntax:
+    /// ```
+    /// lazy var anotherAssembly:AnotherAssembly = self.context.assembly()
+    ///
+    /// let constructObject = {
+    ///   return Object()
+    /// }
+    ///
+    /// var object: IObjectProtocol {
+    ///   return define(init: constructObject) {
+    ///     $0.serivce = self.service
+    ///     $0.anotherService = self.anotherAssembly.anotherService
+    ///   }
+    /// }
+    ///
+    /// var service: IServiceProtocol {
+    ///
+    ///   let serviceFactory = {
+    ///     return Service()
+    ///   }
+    ///   return define(init: serviceFactory)
+    /// }
+    ///
+    /// ```
+    ///
+    /// - parameter key: name of the method or property. Default value should be used in most cases
+    ///
+    /// - parameter definitionKey: name of the method or property. Default value should be used
+    ///
+    /// - parameter scope: type of dependencies resolution. See: **Scope** and [Types of dependency resolution]
+    ///
+    /// - parameter initClosure: a closure, which is called to obtain initial object to be injected into. **Place injectable object here**
+    ///
+    /// - parameter injectClosure: optional closure, called to resolve dependencies for object. **Place dependencies definition here**
+    /// Default value is empty closure.
+    ///
+    /// - returns: Initialized and injected object
+    ///
+    /// [Types of dependency resolution]: https://github.com/AndreyZarembo/EasyDi#dependency-resolution-types-example-of-average-complexity
+    ///
+    public func define<ObjectType>(
+        key: String = #function,
+        definitionKey: String = #function,
+        scope: Scope = .objectGraph,
+        init initClosure: @escaping () -> ObjectType,
+        inject injectClosure: ObjectInjectClosure<ObjectType>? = nil ) -> ObjectType {
+        
+        return define(key: key, definitionKey: definitionKey, scope: scope) { (definition:Definition<ObjectType>) in
+            definition.initClosure = initClosure
+            definition.injectClosure = injectClosure
+        }
+    }
+    
+    /// This method defines a way to construct an object via an autoclosure, which will be initialized and injected by assembly.
     ///
     /// Syntax:
     /// ```
@@ -312,7 +367,7 @@ open class Assembly: AssemblyInternal {
     ///
     /// - parameter scope: type of dependencies resolution. See: **Scope** and [Types of dependency resolution]
     ///
-    /// - parameter initClosure: autoclosure, which is called to obtain initial object to be injected into. **Place injectable object here**
+    /// - parameter initClosure: a autoclosure, which is called to obtain initial object to be injected into. **Place injectable object here**
     ///
     /// - parameter injectClosure: optional closure, called to resolve dependencies for object. **Place dependencies definition here**
     /// Default value is empty closure.
@@ -321,17 +376,14 @@ open class Assembly: AssemblyInternal {
     ///
     /// [Types of dependency resolution]: https://github.com/AndreyZarembo/EasyDi#dependency-resolution-types-example-of-average-complexity
     ///
-    public func define<ObjectType, ResultType: InjectableObject>(
+    public func define<ObjectType>(
         key: String = #function,
         definitionKey: String = #function,
         scope: Scope = .objectGraph,
         init initClosure: @autoclosure @escaping () -> ObjectType,
-        inject injectClosure: ObjectInjectClosure<ObjectType>? = nil ) -> ResultType {
+        inject injectClosure: ObjectInjectClosure<ObjectType>? = nil ) -> ObjectType {
         
-        return define(key: key, definitionKey: definitionKey, scope: scope) { (definition:Definition<ObjectType>) in
-            definition.initClosure = initClosure
-            definition.injectClosure = injectClosure
-        }
+        return define(key: key, definitionKey: definitionKey, scope: scope, init: initClosure, inject: injectClosure)
     }
     
     /// Internal method where main injection logic is performed.
@@ -348,11 +400,11 @@ open class Assembly: AssemblyInternal {
     ///
     /// [Types of dependency resolution]: https://github.com/AndreyZarembo/EasyDi#dependency-resolution-types-example-of-average-complexity
     ///
-    fileprivate func define<ObjectType: InjectableObject, ResultType: InjectableObject>(
+    fileprivate func define<ObjectType: InjectableObject>(
         key simpleKey: String = #function,
         definitionKey simpleDefinitionKey: String = #function,
         scope: Scope = .objectGraph,
-        definitionClosure: DefinitionClosure<ObjectType>? = nil) -> ResultType {
+        definitionClosure: DefinitionClosure<ObjectType>? = nil) -> ObjectType {
         
         guard let context = self.context else {
             fatalError("Associated context doesn't exists anymore")
@@ -370,8 +422,8 @@ open class Assembly: AssemblyInternal {
         if let substitutionClosure = context.substitutions[definitionKey] {
             
             let substitutionObject = substitutionClosure()
-            guard let object = substitutionObject as? ResultType else {
-                fatalError("Expected type: \(ResultType.self), received: \(type(of: substitutionObject))")
+            guard let object = substitutionObject as? ObjectType else {
+                fatalError("Expected type: \(ObjectType.self), received: \(type(of: substitutionObject))")
             }
             return object
             
@@ -430,11 +482,7 @@ open class Assembly: AssemblyInternal {
             context.weakSingletons[key] = wrapper
         }
         
-        guard let finalResult = result as? ResultType else {
-            fatalError("Failed to build result object. Expected \(ResultType.self) received: \(result)")
-        }
-        
-        return finalResult
+        return result
     }
 }
 
